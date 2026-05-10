@@ -1,7 +1,20 @@
 import httpx
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "hf.co/NidAll/supergemma4-e4b-abliterated-Q4_K_M-GGUF:Q4_K_M"
+from app.core.config import settings
+from app.modules.ai.model.models import AiChatMessage
+
+
+def get_ollama_url(path: str) -> str:
+    return f"{settings.ollama_base_url.rstrip('/')}{path}"
+
+
+def get_last_user_message(messages: list[AiChatMessage]) -> str:
+    for message in reversed(messages):
+        if message.role == "user":
+            return message.content
+
+    return ""
+
 
 def build_fallback_answer(user_message: str) -> str:
     return (
@@ -22,31 +35,33 @@ def build_fallback_title(user_message: str) -> str:
     return title[:60]
 
 
-async def generate_bot_answer(user_message: str) -> str:
-    prompt = (
-        "Ты ИИ-ассистент службы поддержки в тикет-сервисе IntelliTicket. "
-        "Отвечай кратко, понятно и по делу. "
-        "Если данных недостаточно, попроси пользователя уточнить проблему.\n\n"
-        f"Сообщение пользователя: {user_message}"
-    )
-
-
+async def generate_bot_answer(messages: list[AiChatMessage]) -> str:
+    user_message = get_last_user_message(messages)
 
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
-                OLLAMA_URL,
+                get_ollama_url("/api/chat"),
                 json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": prompt,
+                    "model": settings.ollama_model,
+                    "messages": [
+                        {
+                            "role": message.role,
+                            "content": message.content,
+                        }
+                        for message in messages
+                    ],
                     "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                    },
                 },
             )
 
         response.raise_for_status()
 
         data = response.json()
-        answer = data.get("response")
+        answer = data.get("message", {}).get("content")
 
         if not answer:
             return build_fallback_answer(user_message)
@@ -64,11 +79,11 @@ async def generate_ticket_title(user_message: str) -> str:
     )
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
-                OLLAMA_URL,
+                get_ollama_url("/api/generate"),
                 json={
-                    "model": OLLAMA_MODEL,
+                    "model": settings.ollama_model,
                     "prompt": prompt,
                     "stream": False,
                 },

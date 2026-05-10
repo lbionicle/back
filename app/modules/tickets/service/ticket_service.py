@@ -16,6 +16,7 @@ from app.modules.tickets.model.models import (
     TicketMessage,
     TicketStatus, TicketRating,
 )
+from app.modules.tickets.service.ticket_ai_context import build_ai_chat_context
 from app.modules.users.model.models import User, UserRole
 
 
@@ -37,6 +38,18 @@ async def get_ticket_by_id(
     return result.scalar_one_or_none()
 
 
+async def get_ticket_messages(
+    session: AsyncSession,
+    ticket_id: UUID,
+) -> list[TicketMessage]:
+    result = await session.execute(
+        select(TicketMessage)
+        .where(TicketMessage.ticket_id == ticket_id)
+        .order_by(TicketMessage.created_at.asc(), TicketMessage.id.asc())
+    )
+
+    return list(result.scalars().all())
+
 async def create_ticket(
     session: AsyncSession,
     initiator: User,
@@ -52,39 +65,48 @@ async def create_ticket(
     session.add(ticket)
     await session.flush()
 
+    ticket_id = ticket.id
+
     user_message = TicketMessage(
-        ticket_id=ticket.id,
+        ticket_id=ticket_id,
         sender_id=initiator.id,
         sender_type=MessageSenderType.initiator,
         text=message_text,
     )
 
     session.add(user_message)
-    await session.flush()
+    await session.commit()
 
-    bot_answer = await generate_bot_answer(message_text)
+    messages = await get_ticket_messages(session, ticket_id)
+    ai_context = build_ai_chat_context(messages)
+
+    bot_answer = await generate_bot_answer(ai_context)
     generated_title = await generate_ticket_title(message_text)
 
+    created_ticket = await get_ticket_by_id(session, ticket_id)
+
+    if not created_ticket:
+        raise RuntimeError("Не удалось получить созданный тикет")
+
+    created_ticket.title = generated_title
+
     bot_message = TicketMessage(
-        ticket_id=ticket.id,
+        ticket_id=ticket_id,
         sender_id=None,
         sender_type=MessageSenderType.bot,
         text=bot_answer,
     )
 
-    ticket.title = generated_title
-
-    session.add(ticket)
+    session.add(created_ticket)
     session.add(bot_message)
-
     await session.commit()
 
-    created_ticket = await get_ticket_by_id(session, ticket.id)
+    updated_ticket = await get_ticket_by_id(session, ticket_id)
 
-    if not created_ticket:
+    if not updated_ticket:
         raise RuntimeError("Не удалось получить созданный тикет")
 
-    return created_ticket
+    return updated_ticket
 
 
 async def get_initiator_tickets(
@@ -133,31 +155,47 @@ async def create_initiator_message(
     initiator: User,
     text: str,
 ) -> Ticket:
+    ticket_id = ticket.id
+    should_generate_bot_answer = not ticket.is_operator_requested
+
     message = TicketMessage(
-        ticket_id=ticket.id,
+        ticket_id=ticket_id,
         sender_id=initiator.id,
         sender_type=MessageSenderType.initiator,
         text=text,
     )
 
-    session.add(message)
-    await session.flush()
+    ticket.updated_at = datetime.now(timezone.utc)
 
-    if not ticket.is_operator_requested:
-        bot_answer = await generate_bot_answer(text)
+    session.add(ticket)
+    session.add(message)
+    await session.commit()
+
+    if should_generate_bot_answer:
+        messages = await get_ticket_messages(session, ticket_id)
+        ai_context = build_ai_chat_context(messages)
+
+        bot_answer = await generate_bot_answer(ai_context)
 
         bot_message = TicketMessage(
-            ticket_id=ticket.id,
+            ticket_id=ticket_id,
             sender_id=None,
             sender_type=MessageSenderType.bot,
             text=bot_answer,
         )
 
+        updated_ticket = await get_ticket_by_id(session, ticket_id)
+
+        if not updated_ticket:
+            raise RuntimeError("Не удалось получить обновлённый тикет")
+
+        updated_ticket.updated_at = datetime.now(timezone.utc)
+
+        session.add(updated_ticket)
         session.add(bot_message)
+        await session.commit()
 
-    await session.commit()
-
-    updated_ticket = await get_ticket_by_id(session, ticket.id)
+    updated_ticket = await get_ticket_by_id(session, ticket_id)
 
     if not updated_ticket:
         raise RuntimeError("Не удалось получить обновлённый тикет")

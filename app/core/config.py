@@ -14,6 +14,9 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:3000"
 
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "hf.co/NidAll/supergemma4-e4b-abliterated-Q4_K_M-GGUF:Q4_K_M"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
