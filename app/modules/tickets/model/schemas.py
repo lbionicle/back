@@ -3,7 +3,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.tickets.model.models import MessageSenderType, TicketStatus
+from app.modules.tickets.model.models import (
+    MessageSenderType,
+    TicketMessageKind,
+    TicketStatus,
+)
 from app.modules.users.model.models import UserRole
 
 
@@ -19,6 +23,7 @@ class TicketMessageRead(BaseModel):
     id: UUID
     sender_id: UUID | None = Field(default=None, serialization_alias="senderId")
     sender_type: MessageSenderType = Field(serialization_alias="senderType")
+    kind: TicketMessageKind
     text: str
     created_at: datetime = Field(serialization_alias="createdAt")
 
@@ -45,6 +50,7 @@ class TicketRead(BaseModel):
         populate_by_name=True,
     )
 
+
 class TicketRatingRead(BaseModel):
     id: UUID
     ticket_id: UUID = Field(serialization_alias="ticketId")
@@ -67,10 +73,10 @@ class TicketRatingRequest(BaseModel):
 
 class TicketUserRead(BaseModel):
     id: UUID
-    full_name: str = Field(alias="fullName")
+    full_name: str = Field(serialization_alias="fullName")
     email: str
     role: UserRole
-    avatar_url: str | None = Field(default=None, alias="avatarUrl")
+    avatar_url: str | None = Field(default=None, serialization_alias="avatarUrl")
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -84,15 +90,16 @@ class TicketDetailsRead(TicketRead):
     initiator: TicketUserRead
     operator: TicketUserRead | None = None
 
+
 class TicketTableRead(BaseModel):
     id: UUID
     title: str
     status: TicketStatus
-    is_priority: bool = Field(alias="isPriority")
-    is_operator_requested: bool = Field(alias="isOperatorRequested")
-    created_at: datetime = Field(alias="createdAt")
-    updated_at: datetime = Field(alias="updatedAt")
-    closed_at: datetime | None = Field(default=None, alias="closedAt")
+    is_priority: bool = Field(serialization_alias="isPriority")
+    is_operator_requested: bool = Field(serialization_alias="isOperatorRequested")
+    created_at: datetime = Field(serialization_alias="createdAt")
+    updated_at: datetime = Field(serialization_alias="updatedAt")
+    closed_at: datetime | None = Field(default=None, serialization_alias="closedAt")
     initiator: TicketUserRead
     operator: TicketUserRead | None = None
 
@@ -116,21 +123,30 @@ class TicketStatsRead(BaseModel):
     in_progress_tickets_count: int = Field(alias="inProgressTicketsCount")
     closed_tickets_count: int = Field(alias="closedTicketsCount")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
 
 
 class TicketAssignRequest(BaseModel):
     operator_id: UUID = Field(alias="operatorId")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
 
 
 class TicketPriorityUpdateRequest(BaseModel):
     is_priority: bool = Field(alias="isPriority")
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+
 
 class TicketStatusUpdateRequest(BaseModel):
     status: TicketStatus
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )

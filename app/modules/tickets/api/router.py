@@ -16,7 +16,7 @@ from app.modules.tickets.model.schemas import (
     TicketRead,
     TicketStatsRead,
     TicketTableRead,
-    TicketUserRead, TicketStatusUpdateRequest, TicketRatingRequest,
+    TicketStatusUpdateRequest, TicketRatingRequest, TicketUserRead
 )
 from app.modules.tickets.service.ticket_service import (
     assign_ticket_by_manager,
@@ -109,11 +109,11 @@ async def get_manager_tickets_stats_endpoint(
     stats = await get_manager_tickets_stats(session)
 
     return TicketStatsRead(
-        totalTicketsCount=stats["total_tickets_count"],
-        priorityTicketsCount=stats["priority_tickets_count"],
-        pendingTicketsCount=stats["pending_tickets_count"],
-        inProgressTicketsCount=stats["in_progress_tickets_count"],
-        closedTicketsCount=stats["closed_tickets_count"],
+        total_tickets_count=stats["total_tickets_count"],
+        priority_tickets_count=stats["priority_tickets_count"],
+        pending_tickets_count=stats["pending_tickets_count"],
+        in_progress_tickets_count=stats["in_progress_tickets_count"],
+        closed_tickets_count=stats["closed_tickets_count"],
     )
 
 
@@ -446,11 +446,11 @@ async def get_operator_tickets_stats_endpoint(
     stats = await get_operator_tickets_stats(session, current_user)
 
     return TicketStatsRead(
-        totalTicketsCount=stats["total_tickets_count"],
-        priorityTicketsCount=stats["priority_tickets_count"],
-        pendingTicketsCount=stats["pending_tickets_count"],
-        inProgressTicketsCount=stats["in_progress_tickets_count"],
-        closedTicketsCount=stats["closed_tickets_count"],
+        total_tickets_count=stats["total_tickets_count"],
+        priority_tickets_count=stats["priority_tickets_count"],
+        pending_tickets_count=stats["pending_tickets_count"],
+        in_progress_tickets_count=stats["in_progress_tickets_count"],
+        closed_tickets_count=stats["closed_tickets_count"],
     )
 
 
@@ -522,7 +522,7 @@ async def assign_me_to_ticket(
             detail=str(error),
         ) from error
 
-@operator_router.post("/{ticket_id}/close", response_model=TicketRead)
+@operator_router.post("/{ticket_id}/close", response_model=TicketDetailsRead)
 async def close_operator_ticket(
     ticket_id: UUID,
     current_user: User = Depends(require_roles(UserRole.operator)),

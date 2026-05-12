@@ -1,6 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, Integer, func, UniqueConstraint, \
     CheckConstraint
@@ -9,6 +10,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+if TYPE_CHECKING:
+    from app.modules.users.model.models import User
 
 class TicketStatus(str, enum.Enum):
     pending = "pending"
@@ -21,6 +24,10 @@ class MessageSenderType(str, enum.Enum):
     operator = "operator"
     bot = "bot"
 
+class TicketMessageKind(str, enum.Enum):
+    text = "text"
+    rating_request = "rating_request"
+    rating_submitted = "rating_submitted"
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -131,6 +138,12 @@ class TicketMessage(Base):
     )
     sender_type: Mapped[MessageSenderType] = mapped_column(
         Enum(MessageSenderType, name="message_sender_type"),
+        nullable=False,
+    )
+    kind: Mapped[TicketMessageKind] = mapped_column(
+        Enum(TicketMessageKind, name="ticket_message_kind"),
+        default=TicketMessageKind.text,
+        server_default=TicketMessageKind.text.value,
         nullable=False,
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)

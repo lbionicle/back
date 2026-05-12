@@ -14,11 +14,16 @@ from app.modules.tickets.model.models import (
     MessageSenderType,
     Ticket,
     TicketMessage,
-    TicketStatus, TicketRating,
+    TicketStatus, TicketRating, TicketMessageKind,
 )
 from app.modules.tickets.service.ticket_ai_context import build_ai_chat_context
 from app.modules.users.model.models import User, UserRole
 
+
+RATING_REQUEST_MESSAGE_TEXT = (
+    "Обращение закрыто. Пожалуйста, оцените качество обслуживания "
+    "и при желании оставьте комментарий."
+)
 
 async def get_ticket_by_id(
     session: AsyncSession,
@@ -50,6 +55,68 @@ async def get_ticket_messages(
 
     return list(result.scalars().all())
 
+def build_rating_submitted_message(
+    rating: int,
+    comment: str | None,
+    is_update: bool,
+) -> str:
+    stars = "★" * rating + "☆" * (5 - rating)
+
+    action_text = (
+        "Пользователь обновил отзыв"
+        if is_update
+        else "Пользователь оставил отзыв"
+    )
+
+    if comment:
+        return f"{action_text}: {stars} ({rating}/5).\nКомментарий: {comment}"
+
+    return f"{action_text}: {stars} ({rating}/5)."
+
+def has_actual_rating(ticket: Ticket) -> bool:
+    if not ticket.rating:
+        return False
+
+    if not ticket.closed_at:
+        return True
+
+    return ticket.rating.updated_at >= ticket.closed_at
+
+async def add_rating_request_message_if_needed(
+    session: AsyncSession,
+    ticket: Ticket,
+) -> None:
+    if ticket.status != TicketStatus.closed:
+        return
+
+    if not ticket.closed_at:
+        return
+
+    if has_actual_rating(ticket):
+        return
+
+    existing_message_result = await session.execute(
+        select(TicketMessage.id)
+        .where(TicketMessage.ticket_id == ticket.id)
+        .where(TicketMessage.kind == TicketMessageKind.rating_request)
+        .where(TicketMessage.created_at >= ticket.closed_at)
+        .limit(1)
+    )
+
+    if existing_message_result.scalar_one_or_none():
+        return
+
+    message = TicketMessage(
+        ticket_id=ticket.id,
+        sender_id=None,
+        sender_type=MessageSenderType.bot,
+        kind=TicketMessageKind.rating_request,
+        text=RATING_REQUEST_MESSAGE_TEXT,
+    )
+
+    session.add(message)
+
+
 async def create_ticket(
     session: AsyncSession,
     initiator: User,
@@ -71,6 +138,7 @@ async def create_ticket(
         ticket_id=ticket_id,
         sender_id=initiator.id,
         sender_type=MessageSenderType.initiator,
+        kind=TicketMessageKind.text,
         text=message_text,
     )
 
@@ -94,6 +162,7 @@ async def create_ticket(
         ticket_id=ticket_id,
         sender_id=None,
         sender_type=MessageSenderType.bot,
+        kind=TicketMessageKind.text,
         text=bot_answer,
     )
 
@@ -133,6 +202,7 @@ async def request_operator(
         ticket_id=ticket.id,
         sender_id=None,
         sender_type=MessageSenderType.bot,
+        kind=TicketMessageKind.text,
         text="Соединяю вас с оператором службы поддержки.",
     )
 
@@ -162,6 +232,7 @@ async def create_initiator_message(
         ticket_id=ticket_id,
         sender_id=initiator.id,
         sender_type=MessageSenderType.initiator,
+        kind=TicketMessageKind.text,
         text=text,
     )
 
@@ -213,9 +284,13 @@ async def create_operator_message(
         ticket_id=ticket.id,
         sender_id=operator.id,
         sender_type=MessageSenderType.operator,
+        kind=TicketMessageKind.text,
         text=text,
     )
 
+    ticket.updated_at = datetime.now(timezone.utc)
+
+    session.add(ticket)
     session.add(message)
     await session.commit()
 
@@ -283,13 +358,24 @@ async def close_ticket(
     ticket: Ticket,
 ) -> Ticket:
     ticket.status = TicketStatus.closed
-    ticket.closed_at = datetime.now(timezone.utc)
+
+    if ticket.closed_at is None:
+        ticket.closed_at = datetime.now(timezone.utc)
+
+    ticket.updated_at = datetime.now(timezone.utc)
 
     session.add(ticket)
-    await session.commit()
-    await session.refresh(ticket)
 
-    return ticket
+    await add_rating_request_message_if_needed(session, ticket)
+
+    await session.commit()
+
+    updated_ticket = await get_ticket_by_id(session, ticket.id)
+
+    if not updated_ticket:
+        raise RuntimeError("Не удалось получить обновлённый тикет")
+
+    return updated_ticket
 
 async def delete_ticket(
     session: AsyncSession,
@@ -621,11 +707,21 @@ async def update_ticket_status(
     else:
         raise ValueError("Некорректный статус тикета")
 
-    session.add(ticket)
-    await session.commit()
-    await session.refresh(ticket)
+    ticket.updated_at = datetime.now(timezone.utc)
 
-    return ticket
+    session.add(ticket)
+
+    if next_status == TicketStatus.closed:
+        await add_rating_request_message_if_needed(session, ticket)
+
+    await session.commit()
+
+    updated_ticket = await get_ticket_by_id(session, ticket.id)
+
+    if not updated_ticket:
+        raise RuntimeError("Не удалось получить обновлённый тикет")
+
+    return updated_ticket
 
 async def rate_ticket_by_initiator(
     session: AsyncSession,
@@ -641,7 +737,8 @@ async def rate_ticket_by_initiator(
     if ticket.status != TicketStatus.closed:
         raise ValueError("Оценить можно только закрытый тикет")
 
-    normalized_comment = comment.strip() if comment else None
+    normalized_comment = comment.strip() if comment and comment.strip() else None
+    is_update = ticket.rating is not None
 
     if ticket.rating:
         ticket.rating.rating = rating
@@ -656,6 +753,23 @@ async def rate_ticket_by_initiator(
         )
 
         session.add(ticket_rating)
+
+    feedback_message = TicketMessage(
+        ticket_id=ticket.id,
+        sender_id=None,
+        sender_type=MessageSenderType.bot,
+        kind=TicketMessageKind.rating_submitted,
+        text=build_rating_submitted_message(
+            rating=rating,
+            comment=normalized_comment,
+            is_update=is_update,
+        ),
+    )
+
+    ticket.updated_at = datetime.now(timezone.utc)
+
+    session.add(ticket)
+    session.add(feedback_message)
 
     await session.commit()
 

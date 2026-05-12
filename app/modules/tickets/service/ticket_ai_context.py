@@ -1,5 +1,5 @@
 from app.modules.ai.model.models import AiChatMessage
-from app.modules.tickets.model.models import MessageSenderType, TicketMessage
+from app.modules.tickets.model.models import MessageSenderType, TicketMessage, TicketMessageKind
 
 AI_CONTEXT_MESSAGES_LIMIT = 12
 
@@ -28,6 +28,7 @@ def build_ai_chat_context(messages: list[TicketMessage]) -> list[AiChatMessage]:
         message
         for message in sorted(messages, key=lambda item: item.created_at)
         if message.text.strip()
+        and message.kind == TicketMessageKind.text
         and message.sender_type
         in {
             MessageSenderType.initiator,
