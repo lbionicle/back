@@ -108,6 +108,10 @@ class Ticket(Base):
         back_populates="ticket",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by=lambda: (
+            TicketMessage.created_at.asc(),
+            TicketMessage.id.asc(),
+        ),
     )
 
     rating: Mapped["TicketRating | None"] = relationship(

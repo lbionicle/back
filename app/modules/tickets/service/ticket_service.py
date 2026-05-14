@@ -40,7 +40,17 @@ async def get_ticket_by_id(
         .where(Ticket.id == ticket_id)
     )
 
-    return result.scalar_one_or_none()
+    ticket = result.scalar_one_or_none()
+
+    if ticket:
+        ticket.messages.sort(
+            key=lambda message: (
+                message.created_at,
+                str(message.id),
+            ),
+        )
+
+    return ticket
 
 
 async def get_ticket_messages(

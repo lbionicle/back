@@ -1,4 +1,5 @@
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import AsyncSessionLocal, engine
+from app.modules.tickets.service.ticket_auto_close_service import run_ticket_auto_close_worker
 from app.modules.users.model import models
 from app.modules.users.service.user_service import ensure_service_manager_exists
 
@@ -22,7 +24,17 @@ async def lifespan(_app: FastAPI):
     async with AsyncSessionLocal() as session:
         await ensure_service_manager_exists(session)
 
-    yield
+    ticket_auto_close_task = asyncio.create_task(
+        run_ticket_auto_close_worker(),
+    )
+
+    try:
+        yield
+    finally:
+        ticket_auto_close_task.cancel()
+
+        with suppress(asyncio.CancelledError):
+            await ticket_auto_close_task
 
 
 MEDIA_DIR = Path('media')
