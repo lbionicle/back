@@ -1,0 +1,21 @@
+services:
+  postgres-test:
+    image: postgres:16
+    container_name: intelliticket-postgres-test
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: intelliticket_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5439:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d intelliticket_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_test_data:

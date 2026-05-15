@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_title: str = "IntelliTicket API"
     database_url: str
+    test_database_url: str | None = None
 
     secret_key: str
     access_token_expire_minutes: int = 60
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        extra='ignore'
     )
 
 
