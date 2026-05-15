@@ -29,8 +29,20 @@ async def get_ticket_by_id(
     session: AsyncSession,
     ticket_id: UUID,
 ) -> Ticket | None:
+    existing_ticket = await session.get(Ticket, ticket_id)
+
+    if existing_ticket:
+        session.expire(
+            existing_ticket,
+            [
+                "messages",
+                "rating",
+            ],
+        )
+
     result = await session.execute(
         select(Ticket)
+        .execution_options(populate_existing=True)
         .options(
             selectinload(Ticket.messages),
             selectinload(Ticket.rating),
